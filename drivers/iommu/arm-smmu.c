@@ -155,84 +155,9 @@ struct arm_smmu_domain {
 	struct iommu_domain		domain;
 };
 
-static int arm_smmu_gr0_ns(int offset)
-{
-	switch(offset) {
-	case ARM_SMMU_GR0_sCR0:
-	case ARM_SMMU_GR0_sACR:
-	case ARM_SMMU_GR0_sGFSR:
-	case ARM_SMMU_GR0_sGFSYNR0:
-	case ARM_SMMU_GR0_sGFSYNR1:
-	case ARM_SMMU_GR0_sGFSYNR2:
-		return offset + 0x400;
-	default:
-		return offset;
-	}
-}
-
-static void __iomem *arm_smmu_page(struct arm_smmu_device *smmu, int n)
-{
-	return smmu->base + (n << smmu->pgshift);
-}
-
-static u64 __arm_smmu_read(struct arm_smmu_device *smmu, int page,
-			   int offset, bool q)
-{
-	if ((smmu->options & ARM_SMMU_OPT_SECURE_CFG_ACCESS) && page == 0)
-		offset = arm_smmu_gr0_ns(offset);
-
-	if (q)
-		return readq_relaxed(arm_smmu_page(smmu, page) + offset);
-	else
-		return readl_relaxed(arm_smmu_page(smmu, page) + offset);
-}
-
-static void __arm_smmu_write(struct arm_smmu_device *smmu, int page,
-			     int offset, u64 val, bool q)
-{
-	if ((smmu->options & ARM_SMMU_OPT_SECURE_CFG_ACCESS) && page == 0)
-		offset = arm_smmu_gr0_ns(offset);
-
-	if (q)
-		writeq_relaxed(val, arm_smmu_page(smmu, page) + offset);
-	else
-		writel_relaxed(val, arm_smmu_page(smmu, page) + offset);
-}
-
-#define arm_smmu_readl(s, p, o)		__arm_smmu_read((s), (p), (o), 0)
-#define arm_smmu_writel(s, p, o, v)	__arm_smmu_write((s), (p), (o), (v), 0)
-
-#define arm_smmu_read_gr0(s, r)		arm_smmu_readl((s), 0, (r))
-#define arm_smmu_write_gr0(s, r, v)	arm_smmu_writel((s), 0, (r), (v))
-
-#define arm_smmu_read_gr1(s, r)		arm_smmu_readl((s), 1, (r))
-#define arm_smmu_write_gr1(s, r, v)	arm_smmu_writel((s), 1, (r), (v))
-
-#define arm_smmu_read_cb(s, n, r)				\
-	arm_smmu_readl((s), (s)->cb_base + (n), (r))
-#define arm_smmu_write_cb(s, n, r, v)				\
-	arm_smmu_writel((s), (s)->cb_base + (n), (r), (v))
-#define arm_smmu_read_cb_q(s, n, r)				\
-	__arm_smmu_read((s), (s)->cb_base + (n), (r), 1)
-#define arm_smmu_write_cb_q(s, n, r, v)			\
-	__arm_smmu_write((s), (s)->cb_base + (n), (r), (v), 1)
-#define arm_smmu_write_cb_addr(s, n, r, v)			\
-	__arm_smmu_write((s), (s)->cb_base + (n), (r), (v),	\
-			 IS_ENABLED(CONFIG_64BIT))
-
-struct arm_smmu_option_prop {
-	u32 opt;
-	const char *prop;
-};
-
 static atomic_t cavium_smmu_context_count = ATOMIC_INIT(0);
 
 static bool using_legacy_binding, using_generic_binding;
-
-static struct arm_smmu_option_prop arm_smmu_options[] = {
-	{ ARM_SMMU_OPT_SECURE_CFG_ACCESS, "calxeda,smmu-secure-config-access" },
-	{ 0, NULL},
-};
 
 static inline int arm_smmu_rpm_get(struct arm_smmu_device *smmu)
 {
@@ -251,20 +176,6 @@ static inline void arm_smmu_rpm_put(struct arm_smmu_device *smmu)
 static struct arm_smmu_domain *to_smmu_domain(struct iommu_domain *dom)
 {
 	return container_of(dom, struct arm_smmu_domain, domain);
-}
-
-static void parse_driver_options(struct arm_smmu_device *smmu)
-{
-	int i = 0;
-
-	do {
-		if (of_property_read_bool(smmu->dev->of_node,
-						arm_smmu_options[i].prop)) {
-			smmu->options |= arm_smmu_options[i].opt;
-			dev_notice(smmu->dev, "option %s\n",
-				arm_smmu_options[i].prop);
-		}
-	} while (arm_smmu_options[++i].opt);
 }
 
 static struct device_node *dev_get_dev_node(struct device *dev)
@@ -2075,8 +1986,6 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 	data = of_device_get_match_data(dev);
 	smmu->version = data->version;
 	smmu->model = data->model;
-
-	parse_driver_options(smmu);
 
 	legacy_binding = of_find_property(dev->of_node, "mmu-masters", NULL);
 	if (legacy_binding && !using_generic_binding) {

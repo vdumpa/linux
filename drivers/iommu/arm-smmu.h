@@ -242,10 +242,9 @@ struct arm_smmu_device {
 #define ARM_SMMU_FEAT_EXIDS		(1 << 12)
 	u32				features;
 
-#define ARM_SMMU_OPT_SECURE_CFG_ACCESS (1 << 0)
-	u32				options;
 	enum arm_smmu_arch_version	version;
 	enum arm_smmu_implementation	model;
+	const struct arm_smmu_impl	*impl;
 
 	u32				num_context_banks;
 	u32				num_s2_context_banks;
@@ -279,8 +278,62 @@ struct arm_smmu_device {
 	struct iommu_device		iommu;
 };
 
-
 /* Implementation details, yay! */
+struct arm_smmu_impl {
+	u64 (*read_reg)(struct arm_smmu_device *smmu, int page, int offset,
+			bool q);
+	void (*write_reg)(struct arm_smmu_device *smmu, int page, int offset,
+			  u64 val, bool q);
+};
+
+static inline void __iomem *arm_smmu_page(struct arm_smmu_device *smmu, int n)
+{
+	return smmu->base + (n << smmu->pgshift);
+}
+
+static inline u64 __arm_smmu_read(struct arm_smmu_device *smmu, int page,
+				  int offset, bool q)
+{
+	if (unlikely(smmu->impl && smmu->impl->read_reg))
+		return smmu->impl->read_reg(smmu, page, offset, q);
+	else if (q)
+		return readq_relaxed(arm_smmu_page(smmu, page) + offset);
+	else
+		return readl_relaxed(arm_smmu_page(smmu, page) + offset);
+}
+
+static inline void __arm_smmu_write(struct arm_smmu_device *smmu, int page,
+				    int offset, u64 val, bool q)
+{
+	if (unlikely(smmu->impl && smmu->impl->write_reg))
+		smmu->impl->write_reg(smmu, page, offset, val, q);
+	else if (q)
+		writeq_relaxed(val, arm_smmu_page(smmu, page) + offset);
+	else
+		writel_relaxed(val, arm_smmu_page(smmu, page) + offset);
+}
+
+#define arm_smmu_readl(s, p, o)		__arm_smmu_read((s), (p), (o), 0)
+#define arm_smmu_writel(s, p, o, v)	__arm_smmu_write((s), (p), (o), (v), 0)
+
+#define arm_smmu_read_gr0(s, r)		arm_smmu_readl((s), 0, (r))
+#define arm_smmu_write_gr0(s, r, v)	arm_smmu_writel((s), 0, (r), (v))
+
+#define arm_smmu_read_gr1(s, r)		arm_smmu_readl((s), 1, (r))
+#define arm_smmu_write_gr1(s, r, v)	arm_smmu_writel((s), 1, (r), (v))
+
+#define arm_smmu_read_cb(s, n, r)				\
+	arm_smmu_readl((s), (s)->cb_base + (n), (r))
+#define arm_smmu_write_cb(s, n, r, v)				\
+	arm_smmu_writel((s), (s)->cb_base + (n), (r), (v))
+#define arm_smmu_read_cb_q(s, n, r)				\
+	__arm_smmu_read((s), (s)->cb_base + (n), (r), 1)
+#define arm_smmu_write_cb_q(s, n, r, v)			\
+	__arm_smmu_write((s), (s)->cb_base + (n), (r), (v), 1)
+#define arm_smmu_write_cb_addr(s, n, r, v)			\
+	__arm_smmu_write((s), (s)->cb_base + (n), (r), (v),	\
+			 IS_ENABLED(CONFIG_64BIT))
+
 int arm_smmu_impl_init(struct arm_smmu_device *smmu);
 
 #endif /* _ARM_SMMU_H */
