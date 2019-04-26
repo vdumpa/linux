@@ -52,11 +52,36 @@ const struct arm_smmu_impl calxeda_impl = {
 };
 
 
+static atomic_t cavium_smmu_context_count = ATOMIC_INIT(0);
+
+static int cavium_cfg_probe(struct arm_smmu_device *smmu)
+{
+	/*
+	 * Cavium CN88xx erratum #27704.
+	 * Ensure ASID and VMID allocation is unique across all SMMUs in
+	 * the system.
+	 */
+	smmu->cavium_id_base = atomic_fetch_add(smmu->num_context_banks,
+						&cavium_smmu_context_count);
+	dev_notice(smmu->dev, "\tenabling workaround for Cavium erratum 27704\n");
+
+	return 0;
+}
+
+const struct arm_smmu_impl cavium_impl = {
+	.cfg_probe = cavium_cfg_probe,
+};
+
+
 int arm_smmu_impl_init(struct arm_smmu_device *smmu)
 {
+	/* The current quirks happen to be mutually-exclusive */
 	if (of_property_read_bool(smmu->dev->of_node,
 				  "calxeda,smmu-secure-config-access"))
 		smmu->impl = &calxeda_impl;
+
+	if (smmu->model == CAVIUM_SMMUV2)
+		smmu->impl = &cavium_impl;
 
 	return 0;
 }
