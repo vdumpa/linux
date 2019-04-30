@@ -25,31 +25,43 @@ static int arm_smmu_gr0_ns(int offset)
 	}
 }
 
-static u64 arm_smmu_read_ns(struct arm_smmu_device *smmu, int page,
-			    int offset, bool q)
+static u32 arm_smmu_read_ns(struct arm_smmu_device *smmu, int page,
+			    int offset)
 {
 	if (page == 0)
 		offset = arm_smmu_gr0_ns(offset);
-	if (q)
-		return readq_relaxed(arm_smmu_page(smmu, page) + offset);
-	else
-		return readl_relaxed(arm_smmu_page(smmu, page) + offset);
+	return readl_relaxed(arm_smmu_page(smmu, page) + offset);
 }
 
 static void arm_smmu_write_ns(struct arm_smmu_device *smmu, int page,
-			      int offset, u64 val, bool q)
+			      int offset, u32 val)
 {
 	if (page == 0)
 		offset = arm_smmu_gr0_ns(offset);
-	if (q)
-		writeq_relaxed(val, arm_smmu_page(smmu, page) + offset);
-	else
-		writel_relaxed(val, arm_smmu_page(smmu, page) + offset);
+	writel_relaxed(val, arm_smmu_page(smmu, page) + offset);
+}
+
+static u64 arm_smmu_read_ns64(struct arm_smmu_device *smmu, int page,
+			      int offset)
+{
+	if (page == 0)
+		offset = arm_smmu_gr0_ns(offset);
+	return readq_relaxed(arm_smmu_page(smmu, page) + offset);
+}
+
+static void arm_smmu_write_ns64(struct arm_smmu_device *smmu, int page,
+				int offset, u64 val)
+{
+	if (page == 0)
+		offset = arm_smmu_gr0_ns(offset);
+	writeq_relaxed(val, arm_smmu_page(smmu, page) + offset);
 }
 
 const struct arm_smmu_impl calxeda_impl = {
 	.read_reg = arm_smmu_read_ns,
 	.write_reg = arm_smmu_write_ns,
+	.read_reg64 = arm_smmu_read_ns64,
+	.write_reg64 = arm_smmu_write_ns64,
 };
 
 
