@@ -285,6 +285,7 @@ struct arm_smmu_impl {
 	void (*write_reg)(struct arm_smmu_device *smmu, int page, int offset,
 			  u64 val, bool q);
 	int (*cfg_probe)(struct arm_smmu_device *smmu);
+	int (*reset)(struct arm_smmu_device *smmu);
 };
 
 static inline void __iomem *arm_smmu_page(struct arm_smmu_device *smmu, int n)
