@@ -394,7 +394,10 @@ static void arm_smmu_tlb_inv_range_s2(unsigned long iova, size_t size,
 	reg = leaf ? ARM_SMMU_CB_S2_TLBIIPAS2L : ARM_SMMU_CB_S2_TLBIIPAS2;
 	iova >>= 12;
 	do {
-		arm_smmu_write_cb_addr(smmu, idx, reg, iova);
+		if (smmu_domain->cfg.fmt == ARM_SMMU_CTX_FMT_AARCH64)
+			arm_smmu_write_cb_q(smmu, idx, reg, iova);
+		else
+			arm_smmu_write_cb(smmu, idx, reg, iova);
 		iova += granule >> 12;
 	} while (size -= granule);
 }
@@ -1221,11 +1224,10 @@ static phys_addr_t arm_smmu_iova_to_phys_hard(struct iommu_domain *domain,
 		return 0;
 
 	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
-	/* ATS1 registers can only be written atomically */
 	va = iova & ~0xfffUL;
-	if (smmu->version == ARM_SMMU_V2)
-		arm_smmu_write_cb_addr(smmu, idx, ARM_SMMU_CB_ATS1PR, va);
-	else /* Register is only 32-bit in v1 */
+	if (cfg->fmt == ARM_SMMU_CTX_FMT_AARCH64)
+		arm_smmu_write_cb_q(smmu, idx, ARM_SMMU_CB_ATS1PR, va);
+	else
 		arm_smmu_write_cb(smmu, idx, ARM_SMMU_CB_ATS1PR, va);
 
 	reg = arm_smmu_page(smmu, smmu->cb_base + idx) + ARM_SMMU_CB_ATSR;

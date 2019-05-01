@@ -297,7 +297,7 @@ static inline void __iomem *arm_smmu_page(struct arm_smmu_device *smmu, int n)
 
 static inline u32 arm_smmu_readl(struct arm_smmu_device *smmu, int page, int offset)
 {
-	if (unlikely(smmu->impl && smmu->impl->read_reg))
+	if (smmu->impl && unlikely(smmu->impl->read_reg))
 		return smmu->impl->read_reg(smmu, page, offset);
 	return readl_relaxed(arm_smmu_page(smmu, page) + offset);
 }
@@ -305,7 +305,7 @@ static inline u32 arm_smmu_readl(struct arm_smmu_device *smmu, int page, int off
 static inline void arm_smmu_writel(struct arm_smmu_device *smmu, int page,
 				   int offset, u32 val)
 {
-	if (unlikely(smmu->impl && smmu->impl->write_reg))
+	if (smmu->impl && unlikely(smmu->impl->write_reg))
 		smmu->impl->write_reg(smmu, page, offset, val);
 	else
 		writel_relaxed(val, arm_smmu_page(smmu, page) + offset);
@@ -313,7 +313,7 @@ static inline void arm_smmu_writel(struct arm_smmu_device *smmu, int page,
 
 static inline u64 arm_smmu_readq(struct arm_smmu_device *smmu, int page, int offset)
 {
-	if (unlikely(smmu->impl && smmu->impl->read_reg64))
+	if (smmu->impl && unlikely(smmu->impl->read_reg64))
 		return smmu->impl->read_reg64(smmu, page, offset);
 	return readq_relaxed(arm_smmu_page(smmu, page) + offset);
 }
@@ -321,7 +321,7 @@ static inline u64 arm_smmu_readq(struct arm_smmu_device *smmu, int page, int off
 static inline void arm_smmu_writeq(struct arm_smmu_device *smmu, int page,
 				   int offset, u64 val)
 {
-	if (unlikely(smmu->impl && smmu->impl->write_reg64))
+	if (smmu->impl && unlikely(smmu->impl->write_reg64))
 		smmu->impl->write_reg64(smmu, page, offset, val);
 	else
 		writeq_relaxed(val, arm_smmu_page(smmu, page) + offset);
@@ -341,10 +341,6 @@ static inline void arm_smmu_writeq(struct arm_smmu_device *smmu, int page,
 	arm_smmu_readq((s), (s)->cb_base + (n), (r))
 #define arm_smmu_write_cb_q(s, n, r, v)			\
 	arm_smmu_writeq((s), (s)->cb_base + (n), (r), (v))
-#define arm_smmu_write_cb_addr(s, n, r, v)			\
-	IS_ENABLED(CONFIG_64BIT) ?				\
-		arm_smmu_write_cb_q((s), (n), (r), (v)) :	\
-		arm_smmu_write_cb((s), (n), (r), (v))		\
 
 int arm_smmu_impl_init(struct arm_smmu_device *smmu);
 
