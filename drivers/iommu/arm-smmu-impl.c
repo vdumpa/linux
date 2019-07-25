@@ -131,8 +131,11 @@ const struct arm_smmu_impl arm_mmu500_impl = {
 };
 
 
-int arm_smmu_impl_init(struct arm_smmu_device *smmu)
+int arm_smmu_impl_init(struct platform_device *pdev,
+		       struct arm_smmu_device *smmu)
 {
+	int ret = 0;
+
 	/* The current quirks happen to be mutually-exclusive */
 	if (of_property_read_bool(smmu->dev->of_node,
 				  "calxeda,smmu-secure-config-access"))
@@ -144,5 +147,8 @@ int arm_smmu_impl_init(struct arm_smmu_device *smmu)
 	if (smmu->model == ARM_MMU500)
 		smmu->impl = &arm_mmu500_impl;
 
-	return 0;
+	if (smmu->model == NVIDIA_SMMUV2)
+		ret = t194_smmu_impl_init(pdev, smmu);
+
+	return ret;
 }

@@ -16,6 +16,7 @@
 #include <linux/device.h>
 #include <linux/iommu.h>
 #include <linux/mutex.h>
+#include <linux/platform_device.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
 
@@ -218,6 +219,7 @@ enum arm_smmu_implementation {
 	ARM_MMU500,
 	CAVIUM_SMMUV2,
 	QCOM_SMMUV2,
+	NVIDIA_SMMUV2,
 };
 
 struct arm_smmu_device {
@@ -342,6 +344,9 @@ static inline void arm_smmu_writeq(struct arm_smmu_device *smmu, int page,
 #define arm_smmu_write_cb_q(s, n, r, v)			\
 	arm_smmu_writeq((s), (s)->cb_base + (n), (r), (v))
 
-int arm_smmu_impl_init(struct arm_smmu_device *smmu);
+int arm_smmu_impl_init(struct platform_device *pdev,
+		       struct arm_smmu_device *smmu);
+int t194_smmu_impl_init(struct platform_device *pdev,
+			struct arm_smmu_device *smmu);
 
 #endif /* _ARM_SMMU_H */
