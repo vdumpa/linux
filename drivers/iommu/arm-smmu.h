@@ -15,6 +15,7 @@
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/iommu.h>
+#include <linux/irqreturn.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
@@ -294,6 +295,8 @@ struct arm_smmu_impl {
 	int (*reset)(struct arm_smmu_device *smmu);
 	void (*tlb_sync)(struct arm_smmu_device *smmu, int page, int sync,
 			 int status);
+	irqreturn_t (*global_fault)(int irq, struct arm_smmu_device *smmu);
+	irqreturn_t (*context_fault)(int irq, struct arm_smmu_device *smmu, int cbndx);
 };
 
 static inline void __iomem *arm_smmu_page(struct arm_smmu_device *smmu, int n)
