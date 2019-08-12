@@ -161,5 +161,8 @@ struct arm_smmu_device *arm_smmu_impl_init(struct arm_smmu_device *smmu)
 	if (smmu->model == ARM_MMU500)
 		smmu->impl = &arm_mmu500_impl;
 
+	if (smmu->model == NVIDIA_SMMUV2)
+		return nvidia_smmu_impl_init(smmu);
+
 	return smmu;
 }
