@@ -14,6 +14,10 @@
 
 #define NUM_SMMU_INSTANCES 3
 
+static irqreturn_t nsmmu_context_fault_inst(int irq,
+					    struct arm_smmu_device *smmu,
+					    int idx, int inst);
+
 struct nvidia_smmu {
 	struct arm_smmu_device	smmu;
 	int			num_inst;
@@ -87,12 +91,132 @@ static void nsmmu_tlb_sync(struct arm_smmu_device *smmu, int page,
 		nsmmu_tlb_sync_wait(smmu, page, sync, status, i);
 }
 
+static irqreturn_t nsmmu_global_fault_inst(int irq,
+					       struct arm_smmu_device *smmu,
+					       int inst)
+{
+	u32 gfsr, gfsynr0, gfsynr1, gfsynr2;
+
+	gfsr = readl_relaxed(nsmmu_page(smmu, inst, 0) + ARM_SMMU_GR0_sGFSR);
+	gfsynr0 = readl_relaxed(nsmmu_page(smmu, inst, 0) + ARM_SMMU_GR0_sGFSYNR0);
+	gfsynr1 = readl_relaxed(nsmmu_page(smmu, inst, 0) + ARM_SMMU_GR0_sGFSYNR1);
+	gfsynr2 = readl_relaxed(nsmmu_page(smmu, inst, 0) + ARM_SMMU_GR0_sGFSYNR2);
+
+	if (!gfsr)
+		return IRQ_NONE;
+
+	dev_err_ratelimited(smmu->dev,
+		"Unexpected global fault, this could be serious\n");
+	dev_err_ratelimited(smmu->dev,
+		"\tGFSR 0x%08x, GFSYNR0 0x%08x, GFSYNR1 0x%08x, GFSYNR2 0x%08x\n",
+		gfsr, gfsynr0, gfsynr1, gfsynr2);
+
+	writel_relaxed(gfsr, nsmmu_page(smmu, inst, 0) + ARM_SMMU_GR0_sGFSR);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t nsmmu_global_fault(int irq, struct arm_smmu_device *smmu)
+{
+	int i;
+	irqreturn_t irq_ret = IRQ_NONE;
+
+	/* Interrupt line is shared between global and context faults.
+	 * Check for both type of interrupts on either fault handlers.
+	 */
+	for (i = 0; i < to_nsmmu(smmu)->num_inst; i++) {
+		irq_ret = nsmmu_context_fault_inst(irq, smmu, 0, i);
+		if (irq_ret == IRQ_HANDLED)
+			return irq_ret;
+	}
+
+	for (i = 0; i < to_nsmmu(smmu)->num_inst; i++) {
+		irq_ret = nsmmu_global_fault_inst(irq, smmu, i);
+		if (irq_ret == IRQ_HANDLED)
+			return irq_ret;
+	}
+
+	return irq_ret;
+}
+
+static irqreturn_t nsmmu_context_fault_bank(int irq,
+					    struct arm_smmu_device *smmu,
+					    int idx, int inst)
+{
+	u32 fsr, fsynr, cbfrsynra;
+	unsigned long iova;
+
+	fsr = arm_smmu_cb_read(smmu, idx, ARM_SMMU_CB_FSR);
+	if (!(fsr & FSR_FAULT))
+		return IRQ_NONE;
+
+	fsynr = readl_relaxed(nsmmu_page(smmu, inst, smmu->cb_base + idx) +
+			      ARM_SMMU_CB_FSYNR0);
+	iova = readq_relaxed(nsmmu_page(smmu, inst, smmu->cb_base + idx) +
+			     ARM_SMMU_CB_FAR);
+	cbfrsynra = readl_relaxed(nsmmu_page(smmu, inst, 1) +
+				  ARM_SMMU_GR1_CBFRSYNRA(idx));
+
+	dev_err_ratelimited(smmu->dev,
+	"Unhandled context fault: fsr=0x%x, iova=0x%08lx, fsynr=0x%x, cbfrsynra=0x%x, cb=%d\n",
+			    fsr, iova, fsynr, cbfrsynra, idx);
+
+	writel_relaxed(fsr, nsmmu_page(smmu, inst, smmu->cb_base + idx) +
+			    ARM_SMMU_CB_FSR);
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t nsmmu_context_fault_inst(int irq,
+					    struct arm_smmu_device *smmu,
+					    int idx, int inst)
+{
+	irqreturn_t irq_ret = IRQ_NONE;
+
+	/* Interrupt line shared between global and all context faults.
+	 * Check for faults across all contexts.
+	 */
+	for (idx = 0; idx < smmu->num_context_banks; idx++) {
+		irq_ret = nsmmu_context_fault_bank(irq, smmu, idx, inst);
+
+		if (irq_ret == IRQ_HANDLED)
+			break;
+	}
+
+	return irq_ret;
+}
+
+static irqreturn_t nsmmu_context_fault(int irq,
+				       struct arm_smmu_device *smmu,
+				       int cbndx)
+{
+	int i;
+	irqreturn_t irq_ret = IRQ_NONE;
+
+	/* Interrupt line is shared between global and context faults.
+	 * Check for both type of interrupts on either fault handlers.
+	 */
+	for (i = 0; i < to_nsmmu(smmu)->num_inst; i++) {
+		irq_ret = nsmmu_global_fault_inst(irq, smmu, i);
+		if (irq_ret == IRQ_HANDLED)
+			return irq_ret;
+	}
+
+	for (i = 0; i < to_nsmmu(smmu)->num_inst; i++) {
+		irq_ret = nsmmu_context_fault_inst(irq, smmu, cbndx, i);
+		if (irq_ret == IRQ_HANDLED)
+			return irq_ret;
+	}
+
+	return irq_ret;
+}
+
 static const struct arm_smmu_impl nsmmu_impl = {
 	.read_reg = nsmmu_read_reg,
 	.write_reg = nsmmu_write_reg,
 	.read_reg64 = nsmmu_read_reg64,
 	.write_reg64 = nsmmu_write_reg64,
 	.tlb_sync = nsmmu_tlb_sync,
+	.global_fault = nsmmu_global_fault,
+	.context_fault = nsmmu_context_fault,
 };
 
 struct arm_smmu_device *nvidia_smmu_impl_init(struct arm_smmu_device *smmu)
