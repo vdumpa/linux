@@ -56,11 +56,43 @@ static void nsmmu_write_reg64(struct arm_smmu_device *smmu,
 		writeq_relaxed(val, nsmmu_page(smmu, i, page) + offset);
 }
 
+static void nsmmu_tlb_sync_wait(struct arm_smmu_device *smmu, int page,
+				int sync, int status, int inst)
+{
+	u32 reg;
+	unsigned int spin_cnt, delay;
+
+	for (delay = 1; delay < TLB_LOOP_TIMEOUT; delay *= 2) {
+		for (spin_cnt = TLB_SPIN_COUNT; spin_cnt > 0; spin_cnt--) {
+			reg = readl_relaxed(
+			      nsmmu_page(smmu, inst, page) + status);
+			if (!(reg & sTLBGSTATUS_GSACTIVE))
+				return;
+			cpu_relax();
+		}
+		udelay(delay);
+	}
+	dev_err_ratelimited(smmu->dev,
+			    "TLB sync timed out -- SMMU may be deadlocked\n");
+}
+
+static void nsmmu_tlb_sync(struct arm_smmu_device *smmu, int page,
+			   int sync, int status)
+{
+	int i;
+
+	arm_smmu_writel(smmu, page, sync, 0);
+
+	for (i = 0; i < to_nsmmu(smmu)->num_inst; i++)
+		nsmmu_tlb_sync_wait(smmu, page, sync, status, i);
+}
+
 static const struct arm_smmu_impl nsmmu_impl = {
 	.read_reg = nsmmu_read_reg,
 	.write_reg = nsmmu_write_reg,
 	.read_reg64 = nsmmu_read_reg64,
 	.write_reg64 = nsmmu_write_reg64,
+	.tlb_sync = nsmmu_tlb_sync,
 };
 
 struct arm_smmu_device *nvidia_smmu_impl_init(struct arm_smmu_device *smmu)
